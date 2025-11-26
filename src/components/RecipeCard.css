@@ -1,0 +1,41 @@
+.recipe-card {
+  border-radius: 15px;
+  overflow: hidden;
+  transition: transform 0.3s, box-shadow 0.3s;
+  margin-bottom: 20px;
+
+  background: rgba(255, 255, 255, 0.2); /* Fond semi-transparent */
+  backdrop-filter: blur(8px); /* Flou derrière pour lisibilité */
+  border: 1px solid rgba(0,0,0,0.1); /* Bord léger */
+}
+
+.recipe-card:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+}
+
+.card-image-wrapper {
+  position: relative;
+}
+
+.card-image {
+  height: 200px;
+  width: 100%;
+  object-fit: cover;
+}
+
+.card-overlay {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+  color: white;
+  padding: 10px;
+}
+
+.overlay-title {
+  margin: 0;
+  font-weight: bold;
+  font-size: 1.2rem;
+  text-align: center;
+}

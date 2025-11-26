@@ -1,0 +1,39 @@
+.custom-navbar {
+  background: rgba(255, 255, 255, 0.2); /* fond transparent léger */
+  backdrop-filter: blur(10px); /* effet flou pour lisibilité */
+  transition: all 0.3s ease;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: none; /* supprime toute ombre éventuelle */
+}
+
+.custom-navbar .brand {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 800;
+  font-size: 1.8rem;
+  color: #000; /* texte noir */
+  text-shadow: none; /* supprime shadow */
+  pointer-events: none;
+}
+
+.custom-navbar .nav-link {
+  font-weight: 500;
+  margin-left: 15px;
+  display: flex;
+  align-items: center;
+  transition: all 0.3s ease;
+  color: #000; /* texte noir */
+}
+
+.custom-navbar .nav-link:hover {
+  color: #000; /* pas de changement de couleur */
+  transform: translateY(-2px) scale(1.1);
+  text-shadow: none; /* supprime shadow au hover */
+}
+
+.custom-navbar .nav-link .icon {
+  margin-right: 5px;
+  font-size: 1.1rem;
+}
+
