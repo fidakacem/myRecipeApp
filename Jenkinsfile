@@ -1,22 +1,18 @@
 pipeline {
     agent any
 
-    tools {
-        nodejs "node18"
-    }
-
     stages {
         stage('Checkout') {
             steps {
                 git branch: 'dev',
-                    credentialsId: 'dockerhub-creds',
+                    credentialsId: 'github',
                     url: 'https://github.com/fidakacem/myRecipeApp.git'
             }
         }
 
         stage('Setup') {
             steps {
-                sh 'npm install'
+                sh 'npm install --force'
             }
         }
 
