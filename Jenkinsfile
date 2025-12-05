@@ -40,7 +40,7 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                bat 'smoke-test.bat > smoke-log.txt'
+                bat '.\\smoke-test.bat > smoke-log.txt'
             }
         }
 
