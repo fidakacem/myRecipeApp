@@ -2,47 +2,50 @@ pipeline {
     agent any
 
     triggers {
-        // Déclenchement automatique sur tags vX.Y.Z
-        pollSCM('H/2 * * * *')
-    }
-
-    environment {
-        VERSION = "${env.GIT_TAG_NAME}"
+        // Déclenchement automatique via Webhook GitHub
+        githubPush()
     }
 
     stages {
 
         stage('Check Tag') {
+            when { buildingTag() }
             steps {
                 script {
-                    if (!env.GIT_TAG_NAME) {
-                        error "Ce pipeline ne s’exécute que sur TAG Git."
-                    }
                     echo "Tag détecté : ${env.GIT_TAG_NAME}"
                 }
             }
         }
 
         stage('Checkout') {
+            when { buildingTag() }
             steps {
-                git credentialsId: 'github',
-                    url: 'https://github.com/fidakacem/myRecipeApp.git'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "*/tags/${env.GIT_TAG_NAME}"]],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/fidakacem/myRecipeApp.git',
+                        credentialsId: 'github'
+                    ]]
+                ])
             }
         }
 
         stage('Setup') {
+            when { buildingTag() }
             steps {
                 bat 'npm install --force'
             }
         }
 
         stage('Build') {
+            when { buildingTag() }
             steps {
                 bat 'npm run build'
             }
         }
 
         stage('Docker Build Versionné') {
+            when { buildingTag() }
             steps {
                 bat """
                     docker build -t recettes-app:${env.GIT_TAG_NAME} .
@@ -51,6 +54,7 @@ pipeline {
         }
 
         stage('Run Docker') {
+            when { buildingTag() }
             steps {
                 bat """
                     docker run -d -p 3000:80 --name version_container recettes-app:${env.GIT_TAG_NAME}
@@ -60,18 +64,21 @@ pipeline {
         }
 
         stage('Smoke Test') {
+            when { buildingTag() }
             steps {
                 bat 'smoke-test.bat > smoke-version-log.txt'
             }
         }
 
         stage('Archive Artifacts') {
+            when { buildingTag() }
             steps {
                 archiveArtifacts artifacts: '*.txt', fingerprint: true
             }
         }
 
         stage('Report') {
+            when { buildingTag() }
             steps {
                 echo "Build versionné terminé pour ${env.GIT_TAG_NAME}"
             }
