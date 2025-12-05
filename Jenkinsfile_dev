@@ -37,7 +37,7 @@ pipeline {
         stage('Run Docker') {
             steps {
                 bat '''
-                    docker run -d -p 3001:80 --name dev_container recettes-app:dev-build
+                    docker run -d -p 3000:80 --name dev_container recettes-app:dev-build
                 '''
                 sleep 5
             }
