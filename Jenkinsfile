@@ -40,13 +40,19 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                bat '.\\smoke-test.bat > smoke-log.txt'
+                bat 'smoke-test.bat > smoke-log.txt'
             }
         }
 
         stage('Archive Artifacts') {
             steps {
-                archiveArtifacts artifacts: 'smoke-log.txt'
+                archiveArtifacts artifacts: '*.txt', fingerprint: true
+            }
+        }
+
+        stage('Report') {
+            steps {
+                echo "Pipeline PR finalisé. Artifact disponible dans Jenkins."
             }
         }
     }
