@@ -1,82 +1,57 @@
-/**
- * Pipeline CI/CD pour un Build Versionné (Tag vX.Y.Z)
- * Détection de TAG rendue plus robuste via la commande 'git describe'.
- */
 pipeline {
     agent any
 
     environment {
         IMAGE_NAME = "recettes-app"
-        CONTAINER_NAME_BASE = "versioned-app-container"
-        VERSION = "" // Sera défini par le tag
-        CONTAINER_NAME = "" // Sera défini avec la version
+        CONTAINER_NAME_BASE = "versioned-app"
     }
 
     stages {
 
-        /* -----------------------------
-         * 1) CHECKOUT
-         * ----------------------------*/
+        /* 1 - CHECKOUT */
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        /* -----------------------------
-         * 2) DETECT TAG (vX.Y.Z) - FIXÉ
-         * - Utilise 'git describe' pour récupérer le tag exact du commit.
-         * ----------------------------*/
+        /* 2 - DETECT TAG via Jenkins (fiable à 100%) */
         stage('Detect Tag') {
             steps {
                 script {
-                    // 1. Utiliser git describe pour lire le tag directement depuis le répertoire de travail
-                    def tagOutput = bat(
-                        returnStdout: true,
-                        script: 'git describe --tags --exact-match'
-                    ).trim()
-                    
-                    // 2. Nettoyer l'output (supprimer les sauts de ligne Windows) et valider le format
-                    def tagLine = tagOutput.replaceAll('\\s+', '') // Supprime tous les espaces, y compris CRLF
 
-                    if (tagLine && tagLine =~ /v[0-9]+\.[0-9]+\.[0-9]+/) {
-                        env.VERSION = tagLine
-                        
-                        // Création du nom de conteneur unique (remplace les points par des tirets pour le nom)
-                        def safeVersion = env.VERSION.replace('.', '-')
-                        env.CONTAINER_NAME = "${CONTAINER_NAME_BASE}-${safeVersion}".toLowerCase()
-                        
-                        echo " Tag versionné détecté et validé : ${env.VERSION}"
-                        echo "Conteneur unique défini : ${env.CONTAINER_NAME}"
-                    } else {
-                        // Cela s'affichera si git describe échoue ou si le format n'est pas bon.
-                        error " Tag invalide détecté ou pipeline non déclenché par un tag vX.Y.Z. Sortie Git: ${tagLine ?: 'N/A'}"
+                    if (!env.TAG_NAME) {
+                        error " Ce pipeline doit être déclenché SEULEMENT par un tag vX.Y.Z !"
                     }
+
+                    // Exemple TAG_NAME = "v1.0.27"
+                    env.VERSION = env.TAG_NAME
+
+                    echo "Tag détecté : ${env.VERSION}"
+
+                    // Conteneur unique
+                    env.CONTAINER_NAME = "${CONTAINER_NAME_BASE}-${VERSION.replace('.', '-').toLowerCase()}"
+
+                    echo "Nom du conteneur : ${env.CONTAINER_NAME}"
                 }
             }
         }
 
-        /* -----------------------------
-         * 3) SETUP
-         * ----------------------------*/
+        /* 3 - SETUP */
         stage('Setup') {
             steps {
                 bat 'npm install --force'
             }
         }
 
-        /* -----------------------------
-         * 4) BUILD
-         * ----------------------------*/
+        /* 4 - BUILD */
         stage('Build') {
             steps {
                 bat 'npm run build'
             }
         }
 
-        /* -----------------------------
-         * 5) DOCKER BUILD
-         * ----------------------------*/
+        /* 5 - DOCKER BUILD */
         stage('Docker Build') {
             steps {
                 script {
@@ -85,80 +60,50 @@ pipeline {
             }
         }
 
-        /* -----------------------------
-         * 6) RUN (Docker)
-         * ----------------------------*/
-        stage('Run (Docker)') {
+        /* 6 - RUN (Docker) */
+        stage('Run Docker') {
             steps {
                 script {
-                    // Nettoyage avant de lancer (au cas où le conteneur existerait déjà)
-                    bat "docker rm -f ${env.CONTAINER_NAME} || echo Ancien container non trouvé/supprimé"
-                    // Lancement du nouveau conteneur
+                    bat "docker rm -f ${env.CONTAINER_NAME} || echo OK"
                     bat "docker run -d -p 3000:80 --name ${env.CONTAINER_NAME} ${IMAGE_NAME}:${env.VERSION}"
                     sleep 5
                 }
             }
         }
 
-        /* -----------------------------
-         * 7) SMOKE TEST
-         * ----------------------------*/
+        /* 7 - SMOKE TEST */
         stage('Smoke Test') {
             steps {
-                // Le script smoke-test.bat doit retourner un code d'erreur 0 pour succès.
                 bat 'smoke-test.bat > smoke-log.txt'
             }
         }
 
-        /* -----------------------------
-         * 8) ARCHIVE ARTIFACTS
-         * ----------------------------*/
+        /* 8 - ARCHIVE */
         stage('Archive Artifacts') {
             steps {
                 script {
-                    // Création du package ZIP
                     def zipName = "release-${env.VERSION}.zip"
                     bat "powershell -Command \"Compress-Archive -Path * -DestinationPath '${zipName}' -Force\""
                 }
-
-                // Archivage du log de test et du ZIP de release
-                archiveArtifacts artifacts: 'smoke-log.txt, *.zip', fingerprint: true
+                archiveArtifacts artifacts: '*.zip, smoke-log.txt', fingerprint: true
             }
         }
 
-        /* -----------------------------
-         * 9) CLEANUP
-         * ----------------------------*/
+        /* 9 - CLEANUP */
         stage('Cleanup') {
             steps {
-                echo "Nettoyage du container et de l'image Docker..."
-                bat "docker rm -f ${env.CONTAINER_NAME} || echo Container déjà retiré"
-                bat "docker image rm ${IMAGE_NAME}:${env.VERSION} || echo Image déjà retirée"
+                bat "docker rm -f ${env.CONTAINER_NAME} || echo Container déjà supprimé"
+                bat "docker image rm ${IMAGE_NAME}:${env.VERSION} || echo Image déjà supprimée"
             }
         }
     }
 
-    /* -----------------------------
-     * POST-ACTIONS (Nettoyage de sécurité)
-     * - Utilisation d'un script Groovy pour gérer les variables nulles en cas d'échec précoce.
-     * ----------------------------*/
     post {
-        always {
-             script {
-                echo "Nettoyage de sécurité en post-action..."
-                if (env.CONTAINER_NAME) {
-                    bat "docker rm -f ${env.CONTAINER_NAME} || echo Nettoyage final: container retiré"
-                }
-                if (env.VERSION) {
-                    bat "docker image rm ${IMAGE_NAME}:${env.VERSION} || echo Nettoyage final: image retirée"
-                }
-             }
-        }
         success {
-            echo " Succès: Pipeline Versionné terminé pour la version ${env.VERSION}."
+            echo " Build Versionné SUCCÈS : ${env.VERSION}"
         }
         failure {
-            echo " Échec: Pipeline Versionné échoué."
+            echo " Build Versionné ÉCHOUÉ"
         }
     }
 }
