@@ -12,19 +12,23 @@ pipeline {
         stage('Detect Tag') {
             steps {
                 script {
-                    bat 'git fetch --tags --force'
+                    bat "git fetch --tags --force"
 
                     def rawTag = bat(
-                        script: 'git describe --tags --abbrev=0',
-                        returnStdout: true
+                        returnStdout: true,
+                        script: 'cmd /c git describe --tags --abbrev=0'
                     ).trim()
 
-                    env.VERSION = rawTag.replaceAll('[\r\n]+', '')
-                    echo "Tag detected: ${env.VERSION}"
+                    // Nettoyage Windows
+                    rawTag = rawTag.replaceAll('[\\r\\n]+', '')
 
-                    if (!env.VERSION || env.VERSION == "null") {
-                        error "No Git tag detected. Job must be triggered by a tag."
+                    echo "Detected TAG: ${rawTag}"
+
+                    if (!rawTag || rawTag == "null") {
+                        error "No Git TAG detected"
                     }
+
+                    env.VERSION = rawTag
                 }
             }
         }
@@ -33,30 +37,28 @@ pipeline {
             steps {
                 script {
                     def zipName = "release-${env.VERSION}.zip"
-                    echo "Creating archive: ${zipName}"
+                    echo "Creating ZIP: ${zipName}"
 
                     bat """
-                        powershell Compress-Archive -Path * -DestinationPath ${zipName} -Force
+                        powershell -Command "Compress-Archive -Path * -DestinationPath '${zipName}' -Force"
                     """
-
-                    echo "Archive created: ${zipName}"
                 }
             }
         }
 
         stage('Archive Artifact') {
             steps {
-                archiveArtifacts artifacts: "*.zip", fingerprint: true
+                archiveArtifacts artifacts: '*.zip', fingerprint: true
             }
         }
     }
 
     post {
         success {
-            echo "Build success: Version ${env.VERSION}"
+            echo "Build OK for version ${env.VERSION}"
         }
         failure {
-            echo "Build failed."
+            echo "Build FAILED"
         }
     }
 }
