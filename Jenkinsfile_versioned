@@ -1,95 +1,117 @@
+/**
+ * Pipeline Build Versionné sur TAG (vX.Y.Z)
+ */
+
 pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "recettes-app"
-        CONTAINER_NAME_BASE = "versioned-app"
+        IMAGE_NAME   = "recettes-app"
+        CONTAINER_BASE = "versioned-app"
     }
 
     stages {
 
-        /* 1 - CHECKOUT */
+        /* -----------------------------
+         * 1) CHECKOUT
+         * ----------------------------*/
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        /* 2 - DETECT TAG via Jenkins (fiable à 100%) */
+        /* -----------------------------
+         * 2) DETECT TAG (vX.Y.Z)
+         * ----------------------------*/
         stage('Detect Tag') {
             steps {
                 script {
 
-                    if (!env.TAG_NAME) {
-                        error " Ce pipeline doit être déclenché SEULEMENT par un tag vX.Y.Z !"
+                    // Récupération du tag via git describe
+                    def tag = bat(
+                        returnStdout: true,
+                        script: 'git describe --tags --exact-match 2>nul'
+                    ).trim()
+
+                    if (!tag || !(tag ==~ /^v[0-9]+\\.[0-9]+\\.[0-9]+$/)) {
+                        error "Ce pipeline doit être déclenché UNIQUEMENT par un tag vX.Y.Z ! Tag reçu: '${tag}'"
                     }
 
-                    // Exemple TAG_NAME = "v1.0.27"
-                    env.VERSION = env.TAG_NAME
+                    env.VERSION = tag
+                    env.CONTAINER_NAME = "${CONTAINER_BASE}-${tag.replace('.', '-').toLowerCase()}"
 
                     echo "Tag détecté : ${env.VERSION}"
-
-                    // Conteneur unique
-                    env.CONTAINER_NAME = "${CONTAINER_NAME_BASE}-${VERSION.replace('.', '-').toLowerCase()}"
-
                     echo "Nom du conteneur : ${env.CONTAINER_NAME}"
                 }
             }
         }
 
-        /* 3 - SETUP */
+        /* -----------------------------
+         * 3) SETUP
+         * ----------------------------*/
         stage('Setup') {
             steps {
                 bat 'npm install --force'
             }
         }
 
-        /* 4 - BUILD */
+        /* -----------------------------
+         * 4) BUILD
+         * ----------------------------*/
         stage('Build') {
             steps {
                 bat 'npm run build'
             }
         }
 
-        /* 5 - DOCKER BUILD */
+        /* -----------------------------
+         * 5) DOCKER BUILD
+         * ----------------------------*/
         stage('Docker Build') {
             steps {
-                script {
-                    bat "docker build -t ${IMAGE_NAME}:${env.VERSION} ."
-                }
+                bat "docker build -t ${IMAGE_NAME}:${env.VERSION} ."
             }
         }
 
-        /* 6 - RUN (Docker) */
+        /* -----------------------------
+         * 6) RUN DOCKER
+         * ----------------------------*/
         stage('Run Docker') {
             steps {
                 script {
-                    bat "docker rm -f ${env.CONTAINER_NAME} || echo OK"
+                    bat "docker rm -f ${env.CONTAINER_NAME} || echo Aucun container à supprimer"
                     bat "docker run -d -p 3000:80 --name ${env.CONTAINER_NAME} ${IMAGE_NAME}:${env.VERSION}"
-                    sleep 5
                 }
+                sleep 5
             }
         }
 
-        /* 7 - SMOKE TEST */
+        /* -----------------------------
+         * 7) SMOKE TEST
+         * ----------------------------*/
         stage('Smoke Test') {
             steps {
                 bat 'smoke-test.bat > smoke-log.txt'
             }
         }
 
-        /* 8 - ARCHIVE */
+        /* -----------------------------
+         *  ARCHIVER
+         * ----------------------------*/
         stage('Archive Artifacts') {
             steps {
                 script {
                     def zipName = "release-${env.VERSION}.zip"
                     bat "powershell -Command \"Compress-Archive -Path * -DestinationPath '${zipName}' -Force\""
                 }
-                archiveArtifacts artifacts: '*.zip, smoke-log.txt', fingerprint: true
+                archiveArtifacts artifacts: '*.txt, *.zip', fingerprint: true
             }
         }
 
-        /* 9 - CLEANUP */
+        /* -----------------------------
+         * 9) CLEANUP
+         * ----------------------------*/
         stage('Cleanup') {
             steps {
                 bat "docker rm -f ${env.CONTAINER_NAME} || echo Container déjà supprimé"
@@ -99,11 +121,18 @@ pipeline {
     }
 
     post {
+        always {
+            echo "Post-cleanup..."
+            script {
+                bat "docker rm -f ${env.CONTAINER_NAME} || echo"
+                bat "docker image rm ${IMAGE_NAME}:${env.VERSION} || echo"
+            }
+        }
         success {
-            echo " Build Versionné SUCCÈS : ${env.VERSION}"
+            echo " SUCCESS : Release ${env.VERSION} générée."
         }
         failure {
-            echo " Build Versionné ÉCHOUÉ"
+            echo " FAIL : Build versionné échoué."
         }
     }
 }
