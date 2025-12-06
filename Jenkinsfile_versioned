@@ -1,69 +1,115 @@
 pipeline {
     agent any
 
+    triggers {
+        githubPush()   // Déclenche automatiquement sur creation de TAG
+    }
+
     stages {
 
+        /* 1 — CHECKOUT */
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
+        /* 2 — Detect Tag */
         stage('Detect Tag') {
             steps {
                 script {
-
-                    // Récupérer tous les tags
+                    // Récupération des tags
                     bat 'git fetch --tags --force'
 
-                    // Obtenir le dernier tag
-                    def output = bat(
+                    def rawTag = bat(
                         returnStdout: true,
                         script: 'git describe --tags --abbrev=0'
                     ).trim()
 
-                    // Filtrer uniquement la ligne correspondant au tag
-                    def rawTag = output
-                        .split('\\r?\\n')
-                        .find { it ==~ /v[0-9]+\\.[0-9]+\\.[0-9]+/ }
+                    // Nettoyer Windows \r
+                    rawTag = rawTag.replace("\r","")
 
-                    if (!rawTag) {
-                        error "Unable to detect TAG from output: ${output}"
+                    if (!(rawTag ==~ /v[0-9]+\.[0-9]+\.[0-9]+/)) {
+                        error "Tag format invalid : ${rawTag}"
                     }
 
-                    echo "Detected TAG: ${rawTag}"
+                    echo "Detected TAG = ${rawTag}"
                     env.VERSION = rawTag
                 }
             }
         }
 
-        stage('Build ZIP') {
+        /* 3 — Setup */
+        stage('Setup') {
             steps {
-                script {
-                    def zipName = "release-${env.VERSION}.zip"
-                    echo "Creating ZIP: ${zipName}"
-
-                    // Compression via PowerShell
-                    bat """
-                        powershell -Command "Compress-Archive -Path * -DestinationPath '${zipName}' -Force"
-                    """
-                }
+                bat 'npm install --force'
             }
         }
 
-        stage('Archive Artifact') {
+        /* 4 — Build */
+        stage('Build') {
             steps {
-                archiveArtifacts artifacts: '*.zip', fingerprint: true
+                bat 'npm run build'
+            }
+        }
+
+        /* 5 — Docker Build */
+        stage('Docker Build') {
+            steps {
+                bat "docker build -t recettes-app:${env.VERSION} ."
+            }
+        }
+
+        /* 6 — Run Docker */
+        stage('Run Docker') {
+            steps {
+                bat """
+                    docker run -d -p 3002:80 --name versioned_container recettes-app:${env.VERSION}
+                """
+                sleep 5
+            }
+        }
+
+        /* 7 — Smoke Test */
+        stage('Smoke Test') {
+            steps {
+                bat 'smoke-test.bat > smoke-log.txt'
+            }
+        }
+
+        /* 8 — Archive Artifacts */
+        stage('Archive Artifacts') {
+            steps {
+                archiveArtifacts artifacts: '*.txt', fingerprint: true
+                archiveArtifacts artifacts: "*.zip", fingerprint: true
+            }
+        }
+
+        /* 9 — Build ZIP FINAL */
+        stage("Package ZIP") {
+            steps {
+                script {
+                    def zipName = "release-${env.VERSION}.zip"
+                    bat """
+                        powershell -Command "Compress-Archive -Path dist/* -DestinationPath '${zipName}' -Force"
+                    """
+                }
             }
         }
     }
 
     post {
+        always {
+            bat """
+                docker rm -f versioned_container || echo container removed
+                docker image rm recettes-app:${env.VERSION} || echo image removed
+            """
+        }
         success {
-            echo "Build OK for version ${env.VERSION}"
+            echo " Versioned Build OK for ${env.VERSION}"
         }
         failure {
-            echo "Build FAILED"
+            echo " Versioned Build FAILED"
         }
     }
 }
