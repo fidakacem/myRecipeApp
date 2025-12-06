@@ -43,7 +43,7 @@ pipeline {
                     echo "DEBUG TAG: ${tag}"
 
                     // Validation du format vX.Y.Z
-                    if (!tag || !(tag ==~ /^v[0-9]+\\.[0-9]+\\.[0-9]+$/)) {
+                    if (!tag || !(tag ==~ /v\d+\.\d+\.\d+/)) {
                         error "Pipeline réservé aux tags vX.Y.Z — Tag reçu: '${tag}'"
                     }
 
