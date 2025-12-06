@@ -6,16 +6,22 @@ pipeline {
     }
 
     stages {
+
         stage('Detect Tag') {
             steps {
                 script {
-                    // Obtenir le tag Git correctement
-                    def rawTag = bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
-                    VERSION = rawTag.replaceAll('\r','')  // Nettoyage retour chariot
-                    echo "Tag détecté : ${VERSION}"
+                    def rawTag = bat(
+                        script: 'git describe --tags --abbrev=0',
+                        returnStdout: true
+                    ).trim()
 
-                    if (!VERSION) {
-                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.14)"
+                    // Nettoyer correctement
+                    env.VERSION = rawTag.replaceAll('[\r\n]+', '')
+
+                    echo "Tag détecté propre : ${env.VERSION}"
+
+                    if (!env.VERSION) {
+                        error "Aucun tag détecté. Ce job doit être lancé via un tag Git."
                     }
                 }
             }
@@ -24,7 +30,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout([$class: 'GitSCM',
-                    branches: [[name: "refs/tags/${VERSION}"]],
+                    branches: [[name: "refs/tags/${env.VERSION}"]],
                     doGenerateSubmoduleConfigurations: false,
                     extensions: [],
                     userRemoteConfigs: [[
@@ -37,50 +43,44 @@ pipeline {
 
         stage('Setup') {
             steps {
-                echo "Installation des dépendances npm"
                 bat 'npm install --force'
             }
         }
 
         stage('Build') {
             steps {
-                echo "Build de l'application React"
                 bat 'npm run build'
             }
         }
 
         stage('Docker Build Versionné') {
             steps {
-                echo "Création de l'image Docker versionnée"
-                bat "docker build -t recettes-app:${VERSION} ."
+                bat "docker build -t recettes-app:${env.VERSION} ."
             }
         }
 
         stage('Run Docker') {
             steps {
-                echo "Lancement du container Docker versionné"
-                bat "docker run -d -p 3000:80 --name version_container recettes-app:${VERSION}"
+                bat "docker run -d -p 3000:80 --name version_container recettes-app:${env.VERSION}"
                 sleep 5
             }
         }
 
         stage('Smoke Test') {
             steps {
-                echo "Exécution des tests de fumée"
                 bat 'smoke-test.bat > smoke-version-log.txt'
             }
         }
 
         stage('Archive Artifacts') {
             steps {
-                echo "Archivage des artefacts"
                 archiveArtifacts artifacts: '*.txt', fingerprint: true
             }
         }
 
         stage('Report') {
             steps {
-                echo "Build versionné terminé pour ${VERSION}"
+                echo "Build versionné terminé pour ${env.VERSION}"
             }
         }
     }
@@ -90,14 +90,14 @@ pipeline {
             echo "Nettoyage Docker"
             bat """
                 docker rm -f version_container || echo container removed
-                docker rmi recettes-app:${VERSION} || echo image removed
+                docker rmi recettes-app:${env.VERSION} || echo image removed
             """
         }
         success {
-            echo "Pipeline terminé avec succès pour le tag ${VERSION}"
+            echo "Pipeline terminé avec succès pour le tag ${env.VERSION}"
         }
         failure {
-            echo "Pipeline échoué pour le tag ${VERSION}"
+            echo "Pipeline échoué pour le tag ${env.VERSION}"
         }
     }
 }
