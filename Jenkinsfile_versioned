@@ -2,25 +2,20 @@ pipeline {
     agent any
 
     environment {
-        VERSION = '' // Variable pour stocker le tag Git
+        VERSION = ''
     }
 
-    // Décommenter si tu veux polling au lieu de webhook
-    // triggers {
-    //     pollSCM('* * * * *') // vérifie toutes les minutes
-    // }
-
     stages {
-
         stage('Detect Tag') {
             steps {
                 script {
-                    // Récupère le tag Git depuis Jenkins (env.GIT_TAG_NAME) ou via git describe
-                    VERSION = env.GIT_TAG_NAME ?: bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
+                    // Obtenir le tag Git correctement
+                    def rawTag = bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
+                    VERSION = rawTag.replaceAll('\r','')  // Nettoyage retour chariot
                     echo "Tag détecté : ${VERSION}"
 
                     if (!VERSION) {
-                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.11)"
+                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.14)"
                     }
                 }
             }
@@ -34,7 +29,7 @@ pipeline {
                     extensions: [],
                     userRemoteConfigs: [[
                         url: 'https://github.com/fidakacem/myRecipeApp.git',
-                        credentialsId: 'github' // ID de tes credentials GitHub
+                        credentialsId: 'github'
                     ]]
                 ])
             }
