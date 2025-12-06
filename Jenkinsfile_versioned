@@ -1,103 +1,67 @@
 pipeline {
     agent any
 
-    environment {
-        VERSION = ''
-    }
-
     stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Detect Tag') {
             steps {
                 script {
+                    // Assurer la récupération de tous les tags Git
+                    bat 'git fetch --tags --force'
+
+                    // Récupération du dernier tag
                     def rawTag = bat(
                         script: 'git describe --tags --abbrev=0',
                         returnStdout: true
                     ).trim()
 
-                    // Nettoyer correctement
                     env.VERSION = rawTag.replaceAll('[\r\n]+', '')
+                    echo "Tag détecté : ${env.VERSION}"
 
-                    echo "Tag détecté propre : ${env.VERSION}"
-
-                    if (!env.VERSION) {
-                        error "Aucun tag détecté. Ce job doit être lancé via un tag Git."
+                    if (!env.VERSION || env.VERSION == "null") {
+                        error "❌ Aucun tag Git détecté. Le job doit être déclenché via un tag."
                     }
                 }
             }
         }
 
-        stage('Checkout') {
+        stage('Build ZIP Versionné') {
             steps {
-                checkout([$class: 'GitSCM',
-                    branches: [[name: "refs/tags/${env.VERSION}"]],
-                    doGenerateSubmoduleConfigurations: false,
-                    extensions: [],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/fidakacem/myRecipeApp.git',
-                        credentialsId: 'github'
-                    ]]
-                ])
+                script {
+                    // Nom du fichier ZIP
+                    def zipName = "release-${env.VERSION}.zip"
+
+                    echo "Création de l’archive : ${zipName}"
+
+                    // Construction du ZIP
+                    bat """
+                        powershell Compress-Archive -Path * -DestinationPath ${zipName} -Force
+                    """
+
+                    echo "Archive générée : ${zipName}"
+                }
             }
         }
 
-        stage('Setup') {
+        stage('Archive Artifact') {
             steps {
-                bat 'npm install --force'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                bat 'npm run build'
-            }
-        }
-
-        stage('Docker Build Versionné') {
-            steps {
-                bat "docker build -t recettes-app:${env.VERSION} ."
-            }
-        }
-
-        stage('Run Docker') {
-            steps {
-                bat "docker run -d -p 3000:80 --name version_container recettes-app:${env.VERSION}"
-                sleep 5
-            }
-        }
-
-        stage('Smoke Test') {
-            steps {
-                bat 'smoke-test.bat > smoke-version-log.txt'
-            }
-        }
-
-        stage('Archive Artifacts') {
-            steps {
-                archiveArtifacts artifacts: '*.txt', fingerprint: true
-            }
-        }
-
-        stage('Report') {
-            steps {
-                echo "Build versionné terminé pour ${env.VERSION}"
+                archiveArtifacts artifacts: "*.zip", fingerprint: true
             }
         }
     }
 
     post {
-        always {
-            echo "Nettoyage Docker"
-            bat """
-                docker rm -f version_container || echo container removed
-                docker rmi recettes-app:${env.VERSION} || echo image removed
-            """
-        }
         success {
-            echo "Pipeline terminé avec succès pour le tag ${env.VERSION}"
+            echo "✅ Build complété avec succès : Version ${env.VERSION}"
         }
         failure {
-            echo "Pipeline échoué pour le tag ${env.VERSION}"
+            echo "❌ Build échoué."
         }
     }
 }
