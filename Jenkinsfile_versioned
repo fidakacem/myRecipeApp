@@ -12,39 +12,34 @@ pipeline {
         stage('Detect Tag') {
             steps {
                 script {
-                    // Assurer la récupération de tous les tags Git
                     bat 'git fetch --tags --force'
 
-                    // Récupération du dernier tag
                     def rawTag = bat(
                         script: 'git describe --tags --abbrev=0',
                         returnStdout: true
                     ).trim()
 
                     env.VERSION = rawTag.replaceAll('[\r\n]+', '')
-                    echo "Tag détecté : ${env.VERSION}"
+                    echo "Tag detected: ${env.VERSION}"
 
                     if (!env.VERSION || env.VERSION == "null") {
-                        error "❌ Aucun tag Git détecté. Le job doit être déclenché via un tag."
+                        error "No Git tag detected. Job must be triggered by a tag."
                     }
                 }
             }
         }
 
-        stage('Build ZIP Versionné') {
+        stage('Build ZIP') {
             steps {
                 script {
-                    // Nom du fichier ZIP
                     def zipName = "release-${env.VERSION}.zip"
+                    echo "Creating archive: ${zipName}"
 
-                    echo "Création de l’archive : ${zipName}"
-
-                    // Construction du ZIP
                     bat """
                         powershell Compress-Archive -Path * -DestinationPath ${zipName} -Force
                     """
 
-                    echo "Archive générée : ${zipName}"
+                    echo "Archive created: ${zipName}"
                 }
             }
         }
@@ -58,10 +53,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Build complété avec succès : Version ${env.VERSION}"
+            echo "Build success: Version ${env.VERSION}"
         }
         failure {
-            echo "❌ Build échoué."
+            echo "Build failed."
         }
     }
 }
