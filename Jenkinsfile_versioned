@@ -1,14 +1,13 @@
 pipeline {
     agent any
 
-    triggers {
-        // Vérifie toutes les minutes si un nouveau tag est créé
-        pollSCM('* * * * *')
+    environment {
+        VERSION = ''
     }
 
-    environment {
-        // Variable pour stocker le tag détecté
-        VERSION = ''
+    triggers {
+        
+        // pollSCM('* * * * *')
     }
 
     stages {
@@ -16,28 +15,20 @@ pipeline {
         stage('Detect Tag') {
             steps {
                 script {
-                    // Récupère le dernier tag Git depuis le dépôt
-                    VERSION = bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
+                    // Récupère le tag déclencheur du build
+                    if (env.GIT_TAG_NAME) {
+                        VERSION = env.GIT_TAG_NAME
+                    } else {
+                        // Pour les pipelines classiques, récupère le dernier tag
+                        VERSION = bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
+                    }
+
                     echo "Tag détecté : ${VERSION}"
 
                     if (!VERSION) {
-                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.7)"
+                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.9)"
                     }
-
-                    env.VERSION = VERSION
                 }
-            }
-        }
-
-        stage('Checkout') {
-            steps {
-                checkout([$class: 'GitSCM',
-                    branches: [[name: "refs/tags/${env.VERSION}"]],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/fidakacem/myRecipeApp.git',
-                        credentialsId: 'github'
-                    ]]
-                ])
             }
         }
 
@@ -55,17 +46,13 @@ pipeline {
 
         stage('Docker Build Versionné') {
             steps {
-                bat """
-                    docker build -t recettes-app:${env.VERSION} .
-                """
+                bat "docker build -t recettes-app:${VERSION} ."
             }
         }
 
         stage('Run Docker') {
             steps {
-                bat """
-                    docker run -d -p 3000:80 --name version_container recettes-app:${env.VERSION}
-                """
+                bat "docker run -d -p 3000:80 --name version_container recettes-app:${VERSION}"
                 sleep 5
             }
         }
@@ -84,7 +71,7 @@ pipeline {
 
         stage('Report') {
             steps {
-                echo "Build versionné terminé pour ${env.VERSION}"
+                echo "Build versionné terminé pour ${VERSION}"
             }
         }
     }
@@ -94,7 +81,7 @@ pipeline {
             echo "Cleaning up..."
             bat """
                 docker rm -f version_container || echo container removed
-                docker rmi recettes-app:${env.VERSION} || echo image removed
+                docker rmi recettes-app:${VERSION} || echo image removed
             """
         }
     }
