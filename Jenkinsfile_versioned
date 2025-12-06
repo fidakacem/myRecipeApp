@@ -46,11 +46,11 @@ pipeline {
                         def safeVersion = env.VERSION.replace('.', '-')
                         env.CONTAINER_NAME = "${CONTAINER_NAME_BASE}-${safeVersion}".toLowerCase()
                         
-                        echo "✅ Tag versionné détecté et validé : ${env.VERSION}"
+                        echo " Tag versionné détecté et validé : ${env.VERSION}"
                         echo "Conteneur unique défini : ${env.CONTAINER_NAME}"
                     } else {
                         // Cela s'affichera si git describe échoue ou si le format n'est pas bon.
-                        error "❌ Tag invalide détecté ou pipeline non déclenché par un tag vX.Y.Z. Sortie Git: ${tagLine ?: 'N/A'}"
+                        error " Tag invalide détecté ou pipeline non déclenché par un tag vX.Y.Z. Sortie Git: ${tagLine ?: 'N/A'}"
                     }
                 }
             }
@@ -155,10 +155,10 @@ pipeline {
              }
         }
         success {
-            echo "✅ Succès: Pipeline Versionné terminé pour la version ${env.VERSION}."
+            echo " Succès: Pipeline Versionné terminé pour la version ${env.VERSION}."
         }
         failure {
-            echo "❌ Échec: Pipeline Versionné échoué."
+            echo " Échec: Pipeline Versionné échoué."
         }
     }
 }
