@@ -88,7 +88,7 @@ pipeline {
             steps {
                 script {
                     bat """
-                        docker run -d -p 3002:80 --name ${CONTAINER_NAME} ${IMAGE_NAME}:${env.VERSION}
+                        docker run -d -p 3000:80 --name ${CONTAINER_NAME} ${IMAGE_NAME}:${env.VERSION}
                     """
                 }
                 sleep 5
