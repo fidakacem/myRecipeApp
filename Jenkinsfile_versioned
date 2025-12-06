@@ -5,30 +5,36 @@ pipeline {
         VERSION = ''
     }
 
+    // Déclencheur webhook GitHub pour tags uniquement
     triggers {
-        
-        // pollSCM('* * * * *')
+        // Vide, webhook GitHub suffisant pour déclencher sur push de tag
     }
 
     stages {
-
         stage('Detect Tag') {
             steps {
                 script {
-                    // Récupère le tag déclencheur du build
-                    if (env.GIT_TAG_NAME) {
-                        VERSION = env.GIT_TAG_NAME
-                    } else {
-                        // Pour les pipelines classiques, récupère le dernier tag
-                        VERSION = bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
-                    }
-
+                    // Récupère le tag Git à partir de l'environnement Jenkins
+                    VERSION = env.GIT_TAG_NAME ?: bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
                     echo "Tag détecté : ${VERSION}"
-
+                    
+                    // Stop si aucun tag détecté
                     if (!VERSION) {
-                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.9)"
+                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.10)"
                     }
                 }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                checkout([$class: 'GitSCM',
+                    branches: [[name: "refs/tags/${VERSION}"]],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/fidakacem/myRecipeApp.git',
+                        credentialsId: 'github' // ID de tes credentials GitHub
+                    ]]
+                ])
             }
         }
 
@@ -83,6 +89,12 @@ pipeline {
                 docker rm -f version_container || echo container removed
                 docker rmi recettes-app:${VERSION} || echo image removed
             """
+        }
+        success {
+            echo "Pipeline terminé avec succès pour le tag ${VERSION}"
+        }
+        failure {
+            echo "Pipeline échoué pour le tag ${VERSION}"
         }
     }
 }
