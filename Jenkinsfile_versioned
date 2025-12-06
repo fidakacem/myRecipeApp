@@ -13,24 +13,25 @@ pipeline {
             steps {
                 script {
 
-                    // Fetch tags
-                    bat(script: 'git fetch --tags --force')
+                    // Récupérer tous les tags
+                    bat 'git fetch --tags --force'
 
-                    // Detect last tag (NO cmd /c here!)
-                    def rawTag = bat(
+                    // Obtenir le dernier tag
+                    def output = bat(
                         returnStdout: true,
                         script: 'git describe --tags --abbrev=0'
                     ).trim()
 
-                    // Remove CRLF
-                    rawTag = rawTag.replaceAll('[\\r\\n]+', '')
+                    // Filtrer uniquement la ligne correspondant au tag
+                    def rawTag = output
+                        .split('\\r?\\n')
+                        .find { it ==~ /v[0-9]+\\.[0-9]+\\.[0-9]+/ }
 
-                    echo "Detected TAG: ${rawTag}"
-
-                    if (!rawTag || rawTag == "null") {
-                        error "No Git TAG detected"
+                    if (!rawTag) {
+                        error "Unable to detect TAG from output: ${output}"
                     }
 
+                    echo "Detected TAG: ${rawTag}"
                     env.VERSION = rawTag
                 }
             }
@@ -42,6 +43,7 @@ pipeline {
                     def zipName = "release-${env.VERSION}.zip"
                     echo "Creating ZIP: ${zipName}"
 
+                    // Compression via PowerShell
                     bat """
                         powershell -Command "Compress-Archive -Path * -DestinationPath '${zipName}' -Force"
                     """
