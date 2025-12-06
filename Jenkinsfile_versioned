@@ -2,114 +2,161 @@ pipeline {
     agent any
 
     triggers {
-        githubPush()   // Déclenche automatiquement sur creation de TAG
+        // Déclenchement automatique à chaque PUSH d’un TAG vX.Y.Z
+        pollSCM('H/2 * * * *')
+    }
+
+    environment {
+        IMAGE_NAME = "recettes-app"
+        CONTAINER_NAME = "versioned_container"
     }
 
     stages {
 
-        /* 1 — CHECKOUT */
+        /* -----------------------------
+         * 1) CHECKOUT
+         * ----------------------------*/
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        /* 2 — Detect Tag */
+        /* -----------------------------
+         * 2) DETECT TAG (vX.Y.Z)
+         * ----------------------------*/
         stage('Detect Tag') {
             steps {
                 script {
-                    // Récupération des tags
                     bat 'git fetch --tags --force'
 
-                    def rawTag = bat(
+                    def output = bat(
                         returnStdout: true,
                         script: 'git describe --tags --abbrev=0'
-                    ).trim()
+                    )
 
-                    // Nettoyer Windows \r
-                    rawTag = rawTag.replace("\r","")
+                    // Récupérer uniquement la ligne du tag
+                    def tagLine = output.readLines().find { it ==~ /v[0-9]+\.[0-9]+\.[0-9]+/ }
 
-                    if (!(rawTag ==~ /v[0-9]+\.[0-9]+\.[0-9]+/)) {
-                        error "Tag format invalid : ${rawTag}"
+                    if (!tagLine) {
+                        error "No valid TAG found in output: ${output}"
                     }
 
-                    echo "Detected TAG = ${rawTag}"
-                    env.VERSION = rawTag
+                    tagLine = tagLine.replace("\r", "")
+                    echo "Detected TAG: ${tagLine}"
+
+                    env.VERSION = tagLine
                 }
             }
         }
 
-        /* 3 — Setup */
+        /* -----------------------------
+         * 3) SETUP
+         * ----------------------------*/
         stage('Setup') {
             steps {
                 bat 'npm install --force'
             }
         }
 
-        /* 4 — Build */
+        /* -----------------------------
+         * 4) BUILD FRONTEND
+         * ----------------------------*/
         stage('Build') {
             steps {
                 bat 'npm run build'
             }
         }
 
-        /* 5 — Docker Build */
+        /* -----------------------------
+         * 5) BUILD DOCKER IMAGE VERSIONNEE
+         * ----------------------------*/
         stage('Docker Build') {
             steps {
-                bat "docker build -t recettes-app:${env.VERSION} ."
+                script {
+                    bat """
+                        docker build -t ${IMAGE_NAME}:${env.VERSION} .
+                    """
+                }
             }
         }
 
-        /* 6 — Run Docker */
+        /* -----------------------------
+         * 6) RUN DOCKER
+         * ----------------------------*/
         stage('Run Docker') {
             steps {
-                bat """
-                    docker run -d -p 3002:80 --name versioned_container recettes-app:${env.VERSION}
-                """
+                script {
+                    bat """
+                        docker run -d -p 3002:80 --name ${CONTAINER_NAME} ${IMAGE_NAME}:${env.VERSION}
+                    """
+                }
                 sleep 5
             }
         }
 
-        /* 7 — Smoke Test */
+        /* -----------------------------
+         * 7) SMOKE TEST
+         * ----------------------------*/
         stage('Smoke Test') {
             steps {
                 bat 'smoke-test.bat > smoke-log.txt'
             }
         }
 
-        /* 8 — Archive Artifacts */
+        /* -----------------------------
+         * 😎 ARCHIVE ARTEFACTS
+         * ----------------------------*/
         stage('Archive Artifacts') {
             steps {
                 archiveArtifacts artifacts: '*.txt', fingerprint: true
-                archiveArtifacts artifacts: "*.zip", fingerprint: true
             }
         }
 
-        /* 9 — Build ZIP FINAL */
-        stage("Package ZIP") {
+        /* -----------------------------
+         * 9) PACKAGE ZIP VERSIONNE
+         * ----------------------------*/
+        stage('Package ZIP') {
             steps {
                 script {
                     def zipName = "release-${env.VERSION}.zip"
+
                     bat """
-                        powershell -Command "Compress-Archive -Path dist/* -DestinationPath '${zipName}' -Force"
+                        powershell -Command "Compress-Archive -Path * -DestinationPath '${zipName}' -Force"
                     """
                 }
             }
         }
+
+        /* -----------------------------
+         * 10) ARCHIVE ZIP
+         * ----------------------------*/
+        stage('Archive ZIP') {
+            steps {
+                archiveArtifacts artifacts: '*.zip', fingerprint: true
+            }
+        }
     }
 
+    /* -----------------------------
+     * POST-ACTIONS CLEANUP
+     * ----------------------------*/
     post {
         always {
+            echo "Cleaning up..."
+
             bat """
-                docker rm -f versioned_container || echo container removed
-                docker image rm recettes-app:${env.VERSION} || echo image removed
+                docker rm -f ${CONTAINER_NAME} || echo container removed
+                docker image rm ${IMAGE_NAME}:${env.VERSION} || echo image removed
             """
         }
+
         success {
-            echo " Versioned Build OK for ${env.VERSION}"
+            echo "Versioned Build Success — Version ${env.VERSION}"
         }
+
         failure {
-            echo " Versioned Build FAILED"
+            echo "Versioned Build FAILED"
         }
     }
 }
