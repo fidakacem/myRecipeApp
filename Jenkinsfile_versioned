@@ -2,25 +2,25 @@ pipeline {
     agent any
 
     environment {
-        VERSION = ''
+        VERSION = '' // Variable pour stocker le tag Git
     }
 
-    // Déclencheur webhook GitHub pour tags uniquement
-    triggers {
-        // Vide, webhook GitHub suffisant pour déclencher sur push de tag
-    }
+    // Décommenter si tu veux polling au lieu de webhook
+    // triggers {
+    //     pollSCM('* * * * *') // vérifie toutes les minutes
+    // }
 
     stages {
+
         stage('Detect Tag') {
             steps {
                 script {
-                    // Récupère le tag Git à partir de l'environnement Jenkins
+                    // Récupère le tag Git depuis Jenkins (env.GIT_TAG_NAME) ou via git describe
                     VERSION = env.GIT_TAG_NAME ?: bat(script: 'git describe --tags --abbrev=0', returnStdout: true).trim()
                     echo "Tag détecté : ${VERSION}"
-                    
-                    // Stop si aucun tag détecté
+
                     if (!VERSION) {
-                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.10)"
+                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.11)"
                     }
                 }
             }
@@ -30,6 +30,8 @@ pipeline {
             steps {
                 checkout([$class: 'GitSCM',
                     branches: [[name: "refs/tags/${VERSION}"]],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [],
                     userRemoteConfigs: [[
                         url: 'https://github.com/fidakacem/myRecipeApp.git',
                         credentialsId: 'github' // ID de tes credentials GitHub
@@ -40,24 +42,28 @@ pipeline {
 
         stage('Setup') {
             steps {
+                echo "Installation des dépendances npm"
                 bat 'npm install --force'
             }
         }
 
         stage('Build') {
             steps {
+                echo "Build de l'application React"
                 bat 'npm run build'
             }
         }
 
         stage('Docker Build Versionné') {
             steps {
+                echo "Création de l'image Docker versionnée"
                 bat "docker build -t recettes-app:${VERSION} ."
             }
         }
 
         stage('Run Docker') {
             steps {
+                echo "Lancement du container Docker versionné"
                 bat "docker run -d -p 3000:80 --name version_container recettes-app:${VERSION}"
                 sleep 5
             }
@@ -65,12 +71,14 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
+                echo "Exécution des tests de fumée"
                 bat 'smoke-test.bat > smoke-version-log.txt'
             }
         }
 
         stage('Archive Artifacts') {
             steps {
+                echo "Archivage des artefacts"
                 archiveArtifacts artifacts: '*.txt', fingerprint: true
             }
         }
@@ -84,7 +92,7 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up..."
+            echo "Nettoyage Docker"
             bat """
                 docker rm -f version_container || echo container removed
                 docker rmi recettes-app:${VERSION} || echo image removed
