@@ -1,25 +1,31 @@
 pipeline {
     agent any
 
-    triggers {
-        // Vérifie toutes les minutes si un tag a été créé
-        pollSCM('* * * * *')
+    parameters {
+        string(name: 'TAG_NAME', defaultValue: '', description: 'Tag Git à construire (ex: v1.0.7)')
+    }
+
+    environment {
+        VERSION = "${params.TAG_NAME}"
     }
 
     stages {
 
         stage('Check Tag') {
-            when { buildingTag() }
             steps {
-                echo "Tag détecté : ${env.GIT_TAG_NAME}"
+                script {
+                    if (!params.TAG_NAME) {
+                        error "Ce pipeline doit être lancé avec un tag Git (ex: v1.0.7)"
+                    }
+                    echo "Tag détecté : ${params.TAG_NAME}"
+                }
             }
         }
 
         stage('Checkout') {
-            when { buildingTag() }
             steps {
                 checkout([$class: 'GitSCM',
-                    branches: [[name: "refs/tags/${env.GIT_TAG_NAME}"]],
+                    branches: [[name: "refs/tags/${params.TAG_NAME}"]],
                     userRemoteConfigs: [[
                         url: 'https://github.com/fidakacem/myRecipeApp.git',
                         credentialsId: 'github'
@@ -29,56 +35,49 @@ pipeline {
         }
 
         stage('Setup') {
-            when { buildingTag() }
             steps {
                 bat 'npm install --force'
             }
         }
 
         stage('Build') {
-            when { buildingTag() }
             steps {
                 bat 'npm run build'
             }
         }
 
         stage('Docker Build Versionné') {
-            when { buildingTag() }
             steps {
                 bat """
-                    docker build -t recettes-app:${env.GIT_TAG_NAME} .
+                    docker build -t recettes-app:${params.TAG_NAME} .
                 """
             }
         }
 
         stage('Run Docker') {
-            when { buildingTag() }
             steps {
                 bat """
-                    docker run -d -p 3000:80 --name version_container recettes-app:${env.GIT_TAG_NAME}
+                    docker run -d -p 3000:80 --name version_container recettes-app:${params.TAG_NAME}
                 """
                 sleep 5
             }
         }
 
         stage('Smoke Test') {
-            when { buildingTag() }
             steps {
                 bat 'smoke-test.bat > smoke-version-log.txt'
             }
         }
 
         stage('Archive Artifacts') {
-            when { buildingTag() }
             steps {
                 archiveArtifacts artifacts: '*.txt', fingerprint: true
             }
         }
 
         stage('Report') {
-            when { buildingTag() }
             steps {
-                echo "Build versionné terminé pour ${env.GIT_TAG_NAME}"
+                echo "Build versionné terminé pour ${params.TAG_NAME}"
             }
         }
     }
@@ -88,7 +87,7 @@ pipeline {
             echo "Cleaning up..."
             bat """
                 docker rm -f version_container || echo container removed
-                docker rmi recettes-app:${env.GIT_TAG_NAME} || echo image removed
+                docker rmi recettes-app:${params.TAG_NAME} || echo image removed
             """
         }
     }
