@@ -12,14 +12,17 @@ pipeline {
         stage('Detect Tag') {
             steps {
                 script {
-                    bat "git fetch --tags --force"
 
+                    // Fetch tags
+                    bat(script: 'git fetch --tags --force')
+
+                    // Detect last tag (NO cmd /c here!)
                     def rawTag = bat(
                         returnStdout: true,
-                        script: 'cmd /c git describe --tags --abbrev=0'
+                        script: 'git describe --tags --abbrev=0'
                     ).trim()
 
-                    // Nettoyage Windows
+                    // Remove CRLF
                     rawTag = rawTag.replaceAll('[\\r\\n]+', '')
 
                     echo "Detected TAG: ${rawTag}"
