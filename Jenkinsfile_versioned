@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     triggers {
-        // Déclenchement automatique via Webhook GitHub
-        githubPush()
+        // Vérifie toutes les minutes si un tag a été créé
+        pollSCM('* * * * *')
     }
 
     stages {
@@ -11,9 +11,7 @@ pipeline {
         stage('Check Tag') {
             when { buildingTag() }
             steps {
-                script {
-                    echo "Tag détecté : ${env.GIT_TAG_NAME}"
-                }
+                echo "Tag détecté : ${env.GIT_TAG_NAME}"
             }
         }
 
@@ -21,7 +19,7 @@ pipeline {
             when { buildingTag() }
             steps {
                 checkout([$class: 'GitSCM',
-                    branches: [[name: "*/tags/${env.GIT_TAG_NAME}"]],
+                    branches: [[name: "refs/tags/${env.GIT_TAG_NAME}"]],
                     userRemoteConfigs: [[
                         url: 'https://github.com/fidakacem/myRecipeApp.git',
                         credentialsId: 'github'
@@ -88,10 +86,10 @@ pipeline {
     post {
         always {
             echo "Cleaning up..."
-            bat '''
+            bat """
                 docker rm -f version_container || echo container removed
-                docker image rm recettes-app:%VERSION% || echo image removed
-            '''
+                docker rmi recettes-app:${env.GIT_TAG_NAME} || echo image removed
+            """
         }
     }
 }
