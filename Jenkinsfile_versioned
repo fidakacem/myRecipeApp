@@ -1,0 +1,142 @@
+/**
+ * Pipeline Build Versionné sur TAG (vX.Y.Z)
+ */
+
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME     = "recettes-app"
+        CONTAINER_BASE = "versioned-app"
+    }
+
+    stages {
+
+        /* -----------------------------
+         * 1) CHECKOUT
+         * ----------------------------*/
+        stage('Checkout') {
+            steps {
+                checkout scm
+                bat "git fetch --tags"
+            }
+        }
+
+        /* -----------------------------
+         * 2) DETECT TAG (vX.Y.Z)
+         * ----------------------------*/
+        stage('Detect Tag') {
+            steps {
+                script {
+
+                    // Exécute la commande et récupère TOUTE la sortie
+                    def raw = bat(
+                        returnStdout: true,
+                        script: 'git describe --tags --exact-match 2>nul || echo ""'
+                    )
+
+                    // Nettoyage : on prend uniquement la dernière ligne non vide
+                    def lines = raw.readLines().findAll { it.trim() }
+                    def tag = lines ? lines.last().trim() : ""
+
+                    echo "DEBUG RAW: ${raw}"
+                    echo "DEBUG TAG: ${tag}"
+
+                    // Validation du format vX.Y.Z
+                    if (!tag || !(tag ==~ /v\d+\.\d+\.\d+/)) {
+                        error "Pipeline réservé aux tags vX.Y.Z — Tag reçu: '${tag}'"
+                    }
+
+                    env.VERSION = tag
+                    env.CONTAINER_NAME = "${CONTAINER_BASE}-${tag.replace('.', '-')}"
+                    echo " Tag détecté : ${env.VERSION}"
+                    echo " Nom du conteneur : ${env.CONTAINER_NAME}"
+                }
+            }
+        }
+
+        /* -----------------------------
+         * 3) SETUP
+         * ----------------------------*/
+        stage('Setup') {
+            steps {
+                bat 'npm install --force'
+            }
+        }
+
+        /* -----------------------------
+         * 4) BUILD
+         * ----------------------------*/
+        stage('Build') {
+            steps {
+                bat 'npm run build'
+            }
+        }
+
+        /* -----------------------------
+         * 5) DOCKER BUILD
+         * ----------------------------*/
+        stage('Docker Build') {
+            steps {
+                bat "docker build -t ${IMAGE_NAME}:${env.VERSION} ."
+            }
+        }
+
+        /* -----------------------------
+         * 6) RUN DOCKER
+         * ----------------------------*/
+        stage('Run Docker') {
+            steps {
+                script {
+                    bat "docker rm -f ${env.CONTAINER_NAME} || echo Aucun container à supprimer"
+                    bat "docker run -d -p 3000:80 --name ${env.CONTAINER_NAME} ${IMAGE_NAME}:${env.VERSION}"
+                }
+                sleep 5
+            }
+        }
+
+        /* -----------------------------
+         * 7) SMOKE TEST
+         * ----------------------------*/
+        stage('Smoke Test') {
+            steps {
+                bat 'smoke-test.bat > smoke-log.txt'
+            }
+        }
+
+        /* -----------------------------
+         * 8) ARCHIVE ARTIFACTS
+         * ----------------------------*/
+        stage('Archive Artifacts') {
+            steps {
+                script {
+                    def zipName = "release-${env.VERSION}.zip"
+                    bat "powershell -Command \"Compress-Archive -Path * -DestinationPath '${zipName}' -Force\""
+                }
+                archiveArtifacts artifacts: '*.txt, *.zip', fingerprint: true
+            }
+        }
+
+        /* -----------------------------
+         * 9) CLEANUP
+         * ----------------------------*/
+        stage('Cleanup') {
+            steps {
+                bat "docker rm -f ${env.CONTAINER_NAME} || echo Container déjà supprimé"
+                bat "docker image rm ${IMAGE_NAME}:${env.VERSION} || echo Image déjà supprimée"
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Post-cleanup..."
+        }
+        success {
+            echo " SUCCESS : Release ${env.VERSION} générée."
+        }
+        failure {
+            echo " FAIL : Build versionné échoué."
+        }
+    }
+}
